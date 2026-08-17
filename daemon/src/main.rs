@@ -10,10 +10,11 @@ mod server;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-use mechrevoc_core::{default_socket_path, TouchpadMonitor};
+use mechrevoc_core::{default_socket_path, HidrawTouchpad, TouchpadBackend};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut monitor = TouchpadMonitor::open()?;
+    // 面向 TouchpadBackend trait 编程:换硬件后端 / 注入测试 mock 均无需改动此处
+    let mut monitor: Box<dyn TouchpadBackend> = Box::new(HidrawTouchpad::open()?);
     let socket_path = default_socket_path();
 
     let state: Arc<Mutex<bool>> = Arc::new(Mutex::new(monitor.enabled()));

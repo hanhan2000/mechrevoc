@@ -23,11 +23,12 @@
 mechrevoc/                    Cargo workspace（3 个 crate）
 ├── core/                     硬件控制库（零依赖，FFI 调 libc）
 │   └── src/
+│       ├── backend.rs        触摸板后端抽象 trait（接口，实现可替换）
 │       ├── ffi.rs            libc syscall + ioctl 常量
 │       ├── discovery.rs      sysfs 设备发现（hidraw / evdev）
 │       ├── hidraw.rs         HID feature report 0x06 开关封装
 │       ├── evdev.rs          非阻塞事件读取（poll + input_event）
-│       ├── touchpad.rs       组合键状态机 + 手动切换（TouchpadMonitor）
+│       ├── touchpad.rs       HidrawTouchpad：组合键监听 + 手动切换（backend 实现）
 │       └── client.rs         UNIX socket 客户端协议
 ├── daemon/                   mechrevoc-daemon（root，systemd 服务）
 │   └── src/
@@ -42,6 +43,14 @@ mechrevoc/                    Cargo workspace（3 个 crate）
 │       └── boot.rs           启动引导：检测/安装/启动 daemon
 └── deploy/                   安装脚本 + systemd 服务单元
 ```
+
+### 接口与实现分离
+
+调用方（daemon）通过 [`TouchpadBackend`](core/src/backend.rs) trait 使用触摸板能力，不依赖具体硬件实现：
+
+- `HidrawTouchpad`（hidraw + evdev）是真实硬件后端
+- 测试可注入内存 mock 后端（见 `core/src/backend.rs` 测试）
+- 未来支持新机型/新协议 = 新增一个 backend 实现，调用方零改动
 
 ### socket 协议（UNIX domain socket: `/run/mechrevoc.sock`）
 

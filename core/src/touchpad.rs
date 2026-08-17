@@ -1,13 +1,17 @@
-//! 触摸板开关功能:通过 hidraw feature report 控制开关与 LED,
+//! 触摸板 hidraw 后端实现:通过 hidraw feature report 控制开关与 LED,
 //! 并监听固件注入的「Super+Ctrl+Paste」组合键实现角落双击切换。
 //!
 //! 原理:此触摸板固件在检测到「左上角双击」时会通过键盘控制器注入
 //! Super+Ctrl+Paste 组合键(Windows 驱动正是注册这个全局热键来实现
 //! 开关)。固件注入与触摸板开关状态无关,因此任何状态下都能触发,
 //! 形成完整的「角落双击开/关」闭环。
+//!
+//! 本模块是 [`TouchpadBackend`] 的具体实现;调用方只依赖 trait,
+//! 无硬件环境下可用 mock 后端替换(见 `backend::tests`)。
 
 use std::fs;
 
+use crate::backend::TouchpadBackend;
 use crate::discovery;
 use crate::evdev::{EvdevReader, InputEvents, READ_BUFFER_BYTES};
 use crate::ffi::{self, PollFd, POLLIN};
@@ -47,25 +51,25 @@ impl ComboDetector {
     }
 }
 
-/// 触摸板开关监视器:封装硬件开关与组合键监听,供守护进程或 TUI 集成。
+/// hidraw 触摸板后端:封装硬件开关与组合键监听,实现 [`TouchpadBackend`]。
 ///
-/// 设计为非阻塞:调用方在自身事件循环中周期性调用 [`TouchpadMonitor::poll`],
+/// 设计为非阻塞:调用方在自身事件循环中周期性调用 [`TouchpadBackend::poll`],
 /// 即可在等待自身事件的同时处理固件注入的组合键。
-pub struct TouchpadMonitor {
+pub struct HidrawTouchpad {
     switcher: TouchpadSwitcher,
     readers: Vec<EvdevReader>,
     detector: ComboDetector,
     enabled: bool,
 }
 
-impl TouchpadMonitor {
+impl TouchpadBackend for HidrawTouchpad {
     /// 打开触摸板 hidraw 并监听所有键盘类设备
-    pub fn open() -> Result<Self, String> {
+    fn open() -> Result<Self, String> {
         let hid = discovery::find_hidraw().ok_or("touchpad hidraw not found")?;
         let switcher = TouchpadSwitcher::open(&hid)?;
         let enabled = state_is_on(switcher.state()?);
         let readers = open_all_evdev()?;
-        Ok(TouchpadMonitor {
+        Ok(HidrawTouchpad {
             switcher,
             readers,
             detector: ComboDetector::new(),
@@ -74,25 +78,17 @@ impl TouchpadMonitor {
     }
 
     /// 触摸板是否开启
-    pub fn enabled(&self) -> bool {
+    fn enabled(&self) -> bool {
         self.enabled
     }
 
     /// 当前状态的可读描述(如 "ON, LED off, clicks on")
-    pub fn state_description(&self) -> &'static str {
+    fn state_description(&self) -> &'static str {
         describe_state(self.switcher_state_value())
     }
 
-    fn switcher_state_value(&self) -> u8 {
-        if self.enabled {
-            STATE_ON
-        } else {
-            STATE_OFF
-        }
-    }
-
     /// 非阻塞处理一批键盘事件;返回是否有组合键触发了切换
-    pub fn poll(&mut self) -> Result<bool, String> {
+    fn poll(&mut self) -> Result<bool, String> {
         let mut pfds: Vec<PollFd> = self
             .readers
             .iter()
@@ -124,23 +120,18 @@ impl TouchpadMonitor {
     }
 
     /// 手动翻转开关状态
-    pub fn toggle(&mut self) -> Result<(), String> {
+    fn toggle(&mut self) -> Result<(), String> {
         self.enabled = !self.enabled;
         self.switcher.set_state(self.switcher_state_value())
     }
+}
 
-    /// 常驻监听循环(守护进程模式,阻塞运行)
-    pub fn run_forever(mut self) -> Result<(), String> {
-        println!(
-            "touchpad monitor started, current state: {}",
-            self.state_description()
-        );
-        loop {
-            if self.poll()? {
-                println!(">> Super+Ctrl+Paste -> {}", self.state_description());
-            }
-            // 短暂休眠以降低 CPU 占用(组合键事件通常间隔远大于此)
-            std::thread::sleep(std::time::Duration::from_millis(20));
+impl HidrawTouchpad {
+    fn switcher_state_value(&self) -> u8 {
+        if self.enabled {
+            STATE_ON
+        } else {
+            STATE_OFF
         }
     }
 }
