@@ -1,0 +1,5 @@
+# 统一格式化风格(仅 stable rustfmt 支持项, 1.97)
+edition = "2021"
+max_width = 100
+use_small_heuristics = "Default"
+reorder_imports = true

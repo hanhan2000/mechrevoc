@@ -1,0 +1,13 @@
+[Unit]
+Description=Mechrevo hardware control daemon (touchpad)
+# 系统级服务:开机即启动,root 运行,无需 udev 放权
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/mechrevoc-daemon
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

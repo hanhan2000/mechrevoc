@@ -1,0 +1,14 @@
+[package]
+name = "mechrevoc-core"
+version.workspace = true
+edition = "2021"
+license.workspace = true
+rust-version.workspace = true
+description = "机械革命笔记本硬件控制库(零依赖, FFI 调 libc)"
+keywords = ["touchpad", "hidraw", "evdev", "mechrevoc"]
+categories = ["hardware-support", "os::unix-apis"]
+
+[dependencies]
+
+[lints]
+workspace = true

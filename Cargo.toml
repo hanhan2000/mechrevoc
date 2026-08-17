@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = ["core", "daemon", "tui"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.85"
+authors = ["hanhan2000 <730521870@qq.com>"]
+
+[workspace.dependencies]
+mechrevoc-core = { path = "core" }
+ratatui = "0.30"
+crossterm = "0.28"
+
+# 统一 lint 策略：daemon/tui 各自追加 unsafe_code = "forbid"（见各自 Cargo.toml）
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+dbg_macro = "deny"
+todo = "warn"
+
+# 共享 release 优化：全量优化 + 剥离符号
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
