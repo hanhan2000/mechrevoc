@@ -23,13 +23,17 @@
 mechrevoc/                    Cargo workspace（3 个 crate）
 ├── core/                     硬件控制库（零依赖，FFI 调 libc）
 │   └── src/
-│       ├── backend.rs        触摸板后端抽象 trait（接口，实现可替换）
-│       ├── ffi.rs            libc syscall + ioctl 常量
-│       ├── discovery.rs      sysfs 设备发现（hidraw / evdev）
-│       ├── hidraw.rs         HID feature report 0x06 开关封装
-│       ├── evdev.rs          非阻塞事件读取（poll + input_event）
-│       ├── touchpad.rs       HidrawTouchpad：组合键监听 + 手动切换（backend 实现）
-│       └── client.rs         UNIX socket 客户端协议
+│       ├── lib.rs            模块声明 + 对外重导出（扁平 API）
+│       ├── backend.rs        接口层：TouchpadBackend trait
+│       ├── hardware.rs       硬件实现层：模块声明
+│       ├── hardware/
+│       │   ├── ffi.rs        libc syscall + ioctl 常量
+│       │   ├── discovery.rs  sysfs 设备发现（hidraw / evdev）
+│       │   ├── hidraw.rs     HID feature report 0x06 开关封装
+│       │   ├── evdev.rs      非阻塞事件读取（poll + input_event）
+│       │   └── touchpad.rs   HidrawTouchpad：组合键监听 + 切换（backend 实现）
+│       └── protocol.rs       通信协议层：模块声明
+│           └── client.rs     UNIX socket 客户端协议
 ├── daemon/                   mechrevoc-daemon（root，systemd 服务）
 │   └── src/
 │       ├── main.rs           主循环：组合键轮询 + 命令处理 + 状态广播
@@ -44,12 +48,22 @@ mechrevoc/                    Cargo workspace（3 个 crate）
 └── deploy/                   安装脚本 + systemd 服务单元
 ```
 
-### 接口与实现分离
+### 分层设计（core 内部自底向上）
 
-调用方（daemon）通过 [`TouchpadBackend`](core/src/backend.rs) trait 使用触摸板能力，不依赖具体硬件实现：
+```
+调用方（daemon / tui）
+      │ 依赖 trait 与扁平 API（lib.rs 重导出）
+      ▼
+┌──────────────────────────────┐
+│ backend（接口层）             │  TouchpadBackend trait：open/enabled/toggle/…
+├──────────────────────────────┤
+│ hardware（硬件实现层）        │  ffi + discovery + hidraw + evdev + touchpad
+├──────────────────────────────┤
+│ protocol（通信协议层）        │  UNIX socket 客户端（与硬件无关）
+└──────────────────────────────┘
+```
 
-- `HidrawTouchpad`（hidraw + evdev）是真实硬件后端
-- 测试可注入内存 mock 后端（见 `core/src/backend.rs` 测试）
+- `HidrawTouchpad`（hidraw + evdev）是真实硬件后端；测试可注入内存 mock 后端（见 `core/src/backend.rs` 测试）
 - 未来支持新机型/新协议 = 新增一个 backend 实现，调用方零改动
 
 ### socket 协议（UNIX domain socket: `/run/mechrevoc.sock`）

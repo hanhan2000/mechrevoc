@@ -12,10 +12,10 @@
 use std::fs;
 
 use crate::backend::TouchpadBackend;
-use crate::discovery;
-use crate::evdev::{EvdevReader, InputEvents, READ_BUFFER_BYTES};
-use crate::ffi::{self, PollFd, POLLIN};
-use crate::hidraw::{describe_state, state_is_on, TouchpadSwitcher, STATE_OFF, STATE_ON};
+use crate::hardware::discovery;
+use crate::hardware::evdev::{EvdevReader, InputEvents, READ_BUFFER_BYTES};
+use crate::hardware::ffi::{self, PollFd, POLLIN};
+use crate::hardware::hidraw::{describe_state, state_is_on, TouchpadSwitcher, STATE_OFF, STATE_ON};
 
 /// 固件注入的键盘组合:Super+Ctrl+Paste
 const KEY_LEFTMETA: u16 = 0x7d; // 125

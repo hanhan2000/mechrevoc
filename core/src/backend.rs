@@ -1,7 +1,7 @@
 //! 触摸板后端抽象:接口与具体实现分离(依赖倒置)。
 //!
 //! 调用方(daemon)只依赖本 trait,不依赖具体硬件实现:
-//! - [`HidrawTouchpad`](crate::touchpad::HidrawTouchpad) 是真实的 hidraw 后端
+//! - [`HidrawTouchpad`](crate::hardware::touchpad::HidrawTouchpad) 是真实的 hidraw 后端
 //! - 测试可注入内存 mock 后端(见 `backend::tests::MockTouchpad`)
 //!
 //! 未来支持新机型/新协议 = 新增一个 [`TouchpadBackend`] 实现,调用方零改动。

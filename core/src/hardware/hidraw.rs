@@ -9,7 +9,7 @@ use std::ffi::CString;
 use std::fs;
 use std::os::unix::io::RawFd;
 
-use crate::ffi::{self, c_int, PollFd, O_NONBLOCK, O_RDONLY, O_RDWR, POLLIN};
+use crate::hardware::ffi::{self, c_int, PollFd, O_NONBLOCK, O_RDONLY, O_RDWR, POLLIN};
 
 /// 关闭状态:LED 亮 + 触摸板关 + 点击关
 pub const STATE_OFF: u8 = 0x00;

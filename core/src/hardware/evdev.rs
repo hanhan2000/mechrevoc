@@ -4,7 +4,7 @@ use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::ptr;
 
-use crate::ffi::{self, c_int, InputEvent, PollFd, O_NONBLOCK, O_RDONLY, POLLIN};
+use crate::hardware::ffi::{self, c_int, InputEvent, PollFd, O_NONBLOCK, O_RDONLY, POLLIN};
 
 /// 单次读取最多解析的事件数
 const EVENTS_PER_READ: usize = 64;
