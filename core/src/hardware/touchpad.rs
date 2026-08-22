@@ -55,6 +55,9 @@ impl ComboDetector {
 ///
 /// 设计为非阻塞:调用方在自身事件循环中周期性调用 [`TouchpadBackend::poll`],
 /// 即可在等待自身事件的同时处理固件注入的组合键。
+///
+/// 交互模型:每次检测到完整组合键即切换,不引入去抖等防护——
+/// 系统状态以硬件(最后一次交互)为准,daemon 重启后重新读取硬件状态。
 pub struct HidrawTouchpad {
     switcher: TouchpadSwitcher,
     readers: Vec<EvdevReader>,
@@ -119,10 +122,16 @@ impl TouchpadBackend for HidrawTouchpad {
         Ok(toggled)
     }
 
-    /// 手动翻转开关状态
+    /// 手动翻转开关状态。
+    ///
+    /// 以硬件实际状态为准:先读取当前状态再写入相反值,不依赖内存缓存——
+    /// 即使缓存与硬件不同步(异常/外部修改),也能按"最后一次交互"正确翻转。
     fn toggle(&mut self) -> Result<(), String> {
-        self.enabled = !self.enabled;
-        self.switcher.set_state(self.switcher_state_value())
+        let enabled = !state_is_on(self.switcher.state()?);
+        self.switcher
+            .set_state(if enabled { STATE_ON } else { STATE_OFF })?;
+        self.enabled = enabled;
+        Ok(())
     }
 }
 

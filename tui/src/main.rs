@@ -2,78 +2,46 @@
 //!
 //! 通过 UNIX socket 连接 mechrevoc-daemon 守护进程,查询 / 切换触摸板状态,
 //! 本身不接触任何硬件。启动时若守护进程未运行,进入引导流程。
+//!
+//! 本文件仅做装配;运行期逻辑见各模块:
+//! - `state` 界面状态与输入, `view` 渲染, `event_loop`/`terminal` 运行时,
+//! - `bootstrap` 启动引导, `service` daemon 服务管理, `components` 交互组件层。
 
-mod app;
-mod boot;
-mod ui;
+// 客户端不允许任何 unsafe 代码(硬件 FFI 全部收敛于 core)
+#![forbid(unsafe_code)]
 
-use app::{Action, App};
-use boot::BootResult;
-use crossterm::event::{self, Event, KeyEventKind};
-use ratatui::DefaultTerminal;
+mod bootstrap;
+mod components;
+mod event_loop;
+mod service;
+mod state;
+mod terminal;
+mod view;
+
+use bootstrap::BootResult;
+use state::State;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 连接守护进程;失败则进入引导流程(安装/启动)
     let socket_path = mechrevoc_core::default_socket_path();
-
-    // 先尝试直接连接;失败则进入引导流程
     let mut client = match mechrevoc_core::Client::connect(&socket_path) {
         Ok(client) => client,
-        Err(_) => match boot::run(&socket_path)? {
+        Err(_) => match bootstrap::run(&socket_path)? {
             BootResult::Connected(client) => client,
             BootResult::Quit => return Ok(()),
         },
     };
     client.subscribe()?;
 
-    let mut terminal = ratatui::init();
-    let mut app = App::new();
-    app.sync_from_client(&client);
+    // 装配:初始化终端 + 应用状态
+    let mut terminal = terminal::init()?;
+    let mut state = State::new();
+    state.sync_from_client(&client);
+    state.system_info = mechrevoc_core::read_system_info();
+    state.record_temp();
 
-    let result = run(&mut terminal, &mut app, &mut client);
+    let result = event_loop::run(&mut terminal, &mut state, &mut client);
 
-    ratatui::restore();
+    terminal::restore();
     result
-}
-
-/// 主事件循环:处理按键 + 接收守护进程推送的状态
-fn run(
-    terminal: &mut DefaultTerminal,
-    app: &mut App,
-    client: &mut mechrevoc_core::Client,
-) -> Result<(), Box<dyn std::error::Error>> {
-    loop {
-        terminal.draw(|frame| ui::draw(frame, app))?;
-
-        if event::poll(std::time::Duration::from_millis(50))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    match app.handle_key(&key) {
-                        Action::Quit => return Ok(()),
-                        Action::ToggleTouchpad => client.toggle()?,
-                        Action::RefreshState => {
-                            client.get_state()?;
-                            app.sync_from_client(client);
-                        }
-                        Action::DeleteDaemon => {
-                            // 退出全屏 → 卸载(pkexec 授权)→ 提示并退出
-                            ratatui::restore();
-                            let removed = boot::run_uninstall();
-                            if removed {
-                                println!("mechrevoc-daemon 服务已删除。");
-                            } else {
-                                println!("删除失败或已取消(需要系统授权)。");
-                            }
-                            return Ok(());
-                        }
-                        Action::None => {}
-                    }
-                }
-            }
-        }
-
-        // 接收守护进程推送的状态变化(角落双击、其他客户端操作等)
-        if client.poll()? {
-            app.sync_from_client(client);
-        }
-    }
 }

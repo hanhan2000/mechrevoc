@@ -8,9 +8,15 @@
 - 项目骨架标准化：README、LICENSE(MIT)、rust-toolchain、rustfmt 配置
 - 统一 git 版本管理（根仓库，消除 core/daemon/tui 嵌套仓库）
 - workspace 级 clippy lint 配置
+- 系统信息面板：core 新增 `system` 模块（只读 sysfs 的 CPU 温度/电池），TUI System 面板展示
 
 ### Changed
 - 模块化：daemon 新增 `config` 模块承载运行常量
+- 协议单一来源：新增 `core/protocol/line.rs`，命令字与 STATE 行格式 daemon/客户端双端共享
+- 拆分 `tui/boot.rs`：部署操作（检测/安装/启动/卸载）移至新模块 `deploy.rs`
+- unsafe 禁令改由 crate 属性 `#![forbid(unsafe_code)]` 声明，Cargo.toml 完整继承 workspace lints
+- 清理未使用代码：`hidraw::open_readonly`、`hidraw::poll_read`、`evdev::poll_read`
+- 精简冗余重导出：`hardware.rs`/`protocol.rs` 仅保留模块声明，`lib.rs` 为唯一对外门面
 
 ## [0.1.0] - 2026-08-17
 

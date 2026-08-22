@@ -9,7 +9,7 @@ use std::ffi::CString;
 use std::fs;
 use std::os::unix::io::RawFd;
 
-use crate::hardware::ffi::{self, c_int, PollFd, O_NONBLOCK, O_RDONLY, O_RDWR, POLLIN};
+use crate::hardware::ffi::{self, O_NONBLOCK, O_RDWR};
 
 /// 关闭状态:LED 亮 + 触摸板关 + 点击关
 pub const STATE_OFF: u8 = 0x00;
@@ -85,36 +85,6 @@ pub fn describe_state(value: u8) -> &'static str {
         0x02 => "ON, LED off, clicks off",
         _ => "ON, LED off, clicks on",
     }
-}
-
-/// 以只读方式打开 hidraw(用于监听输入报告)
-pub fn open_readonly(dev: &str) -> Result<RawFd, String> {
-    let cpath = CString::new(dev).map_err(|_| "path contains NUL".to_string())?;
-    let fd = unsafe { ffi::open(cpath.as_ptr(), O_RDONLY | O_NONBLOCK) };
-    if fd < 0 {
-        return Err(format!("open({dev}): {}", std::io::Error::last_os_error()));
-    }
-    Ok(fd)
-}
-
-/// 等待并读取一批 hidraw 输入报告字节;超时返回空切片
-pub fn poll_read(fd: RawFd, buf: &mut [u8], timeout_ms: c_int) -> Result<&[u8], String> {
-    let mut pfd = PollFd {
-        fd,
-        events: POLLIN,
-        revents: 0,
-    };
-    unsafe {
-        ffi::poll(&mut pfd, 1, timeout_ms);
-    }
-    if pfd.revents & POLLIN == 0 {
-        return Ok(&buf[..0]);
-    }
-    let n = unsafe { ffi::read(fd, buf.as_mut_ptr() as *mut _, buf.len()) };
-    if n <= 0 {
-        return Ok(&buf[..0]);
-    }
-    Ok(&buf[..n as usize])
 }
 
 /// 从 sysfs 的报告描述符中定位 "surface button switch" 报告 ID。

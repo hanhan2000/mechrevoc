@@ -4,7 +4,7 @@ use std::ffi::CString;
 use std::os::unix::io::RawFd;
 use std::ptr;
 
-use crate::hardware::ffi::{self, c_int, InputEvent, PollFd, O_NONBLOCK, O_RDONLY, POLLIN};
+use crate::hardware::ffi::{self, InputEvent, O_NONBLOCK, O_RDONLY};
 
 /// 单次读取最多解析的事件数
 const EVENTS_PER_READ: usize = 64;
@@ -34,28 +34,6 @@ impl EvdevReader {
 
     /// 非阻塞读取当前可用的原始事件字节(不进行 poll 等待)
     pub fn read_available<'b>(&self, buf: &'b mut [u8]) -> Result<&'b [u8], String> {
-        let n = unsafe { ffi::read(self.fd, buf.as_mut_ptr() as *mut _, buf.len()) };
-        if n <= 0 {
-            return Ok(&buf[..0]);
-        }
-        Ok(&buf[..n as usize])
-    }
-
-    /// 等待并读取一批原始事件字节;超时或暂无可读数据时返回空切片。
-    ///
-    /// 使用 poll(而非阻塞 read)以便守护进程可以周期性地醒来做其他事。
-    pub fn poll_read<'b>(&self, buf: &'b mut [u8], timeout_ms: c_int) -> Result<&'b [u8], String> {
-        let mut pfd = PollFd {
-            fd: self.fd,
-            events: POLLIN,
-            revents: 0,
-        };
-        unsafe {
-            ffi::poll(&mut pfd, 1, timeout_ms);
-        }
-        if pfd.revents & POLLIN == 0 {
-            return Ok(&buf[..0]);
-        }
         let n = unsafe { ffi::read(self.fd, buf.as_mut_ptr() as *mut _, buf.len()) };
         if n <= 0 {
             return Ok(&buf[..0]);

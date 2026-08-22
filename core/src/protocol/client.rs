@@ -6,6 +6,8 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
+use crate::protocol::line::{parse_state_line, CMD_GET, CMD_SUB, CMD_TOGGLE};
+
 /// socket 位置:系统级守护进程(root)监听于此,普通用户客户端连接。
 /// 由守护进程创建并放开权限(0666)。
 pub fn default_socket_path() -> String {
@@ -43,7 +45,7 @@ impl Client {
 
     /// 查询当前状态
     pub fn get_state(&mut self) -> Result<(), String> {
-        self.send("GET")?;
+        self.send(CMD_GET)?;
         let line = self.read_line_blocking(Duration::from_secs(1))?;
         self.apply_state(&line);
         Ok(())
@@ -51,7 +53,7 @@ impl Client {
 
     /// 订阅状态推送;订阅后守护进程会在状态变化时推送 STATE 行
     pub fn subscribe(&mut self) -> Result<(), String> {
-        self.send("SUB")?;
+        self.send(CMD_SUB)?;
         let line = self.read_line_blocking(Duration::from_secs(1))?;
         self.apply_state(&line);
         Ok(())
@@ -59,7 +61,7 @@ impl Client {
 
     /// 请求切换触摸板(实际由守护进程执行,结果通过推送反馈)
     pub fn toggle(&mut self) -> Result<(), String> {
-        self.send("TOGGLE")
+        self.send(CMD_TOGGLE)
     }
 
     /// 非阻塞读取状态推送;收到新状态返回 true 并更新字段
@@ -77,12 +79,8 @@ impl Client {
 
     /// 解析 STATE 行更新本地状态
     fn apply_state(&mut self, line: &str) {
-        let Some(rest) = line.strip_prefix("STATE ") else {
-            return;
-        };
-        let mut parts = rest.splitn(2, ' ');
-        if let (Some(value), Some(desc)) = (parts.next(), parts.next()) {
-            self.enabled = value == "1";
+        if let Some((enabled, desc)) = parse_state_line(line) {
+            self.enabled = enabled;
             self.desc = desc.to_string();
         }
     }

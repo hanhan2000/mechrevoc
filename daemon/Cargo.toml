@@ -9,12 +9,6 @@ description = "mechrevoc 守护进程: 唯一接触硬件的常驻服务(systemd
 [dependencies]
 mechrevoc-core = { workspace = true }
 
-# 手动声明(与 workspace.lints 保持同步):因需要追加 unsafe_code = "forbid"
-[lints.rust]
-unsafe_op_in_unsafe_fn = "deny"
-unsafe_code = "forbid"
-
-[lints.clippy]
-all = { level = "warn", priority = -1 }
-dbg_macro = "deny"
-todo = "warn"
+# 完整继承 workspace lints;unsafe 禁令通过 crate 属性 #![forbid(unsafe_code)] 声明(见 main.rs)
+[lints]
+workspace = true

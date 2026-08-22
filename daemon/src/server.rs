@@ -12,6 +12,8 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
+use mechrevoc_core::{format_state_line, CMD_GET, CMD_SUB, CMD_TOGGLE, ERR_PREFIX};
+
 /// 客户端命令
 pub enum Cmd {
     Toggle,
@@ -50,18 +52,7 @@ pub fn start(
 
 /// 将当前状态格式化为协议行
 pub fn format_state(enabled: bool) -> String {
-    let (value, desc) = if enabled {
-        (
-            "1",
-            mechrevoc_core::describe_state(mechrevoc_core::STATE_ON),
-        )
-    } else {
-        (
-            "0",
-            mechrevoc_core::describe_state(mechrevoc_core::STATE_OFF),
-        )
-    };
-    format!("STATE {value} {desc}")
+    format_state_line(enabled)
 }
 
 /// 处理单个客户端连接,直到断开
@@ -98,15 +89,15 @@ fn handle_client(
         match reader.read_line(&mut line) {
             Ok(0) | Err(_) => break,
             Ok(_) => match line.trim() {
-                "GET" => {
+                CMD_GET => {
                     let enabled = *state.lock().expect("state lock");
                     let _ = sub_tx.send(format_state(enabled));
                 }
-                "TOGGLE" => {
+                CMD_TOGGLE => {
                     // 实际切换由守护进程主线程执行(monitor 独占)
                     let _ = cmd_tx.send(Cmd::Toggle);
                 }
-                "SUB" => {
+                CMD_SUB => {
                     subscribers
                         .lock()
                         .expect("subscribers lock")
@@ -116,7 +107,7 @@ fn handle_client(
                     let _ = sub_tx.send(format_state(enabled));
                 }
                 other => {
-                    let _ = sub_tx.send(format!("ERR unknown command: {other}"));
+                    let _ = sub_tx.send(format!("{ERR_PREFIX}unknown command: {other}"));
                 }
             },
         }

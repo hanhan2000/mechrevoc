@@ -4,6 +4,9 @@
 //! - 监听触摸板角落双击(固件注入的 Super+Ctrl+Paste)自动切换开关
 //! - 通过 UNIX socket 为 TUI 客户端提供查询与切换接口
 
+// 守护进程不允许任何 unsafe 代码(硬件 FFI 全部收敛于 core)
+#![forbid(unsafe_code)]
+
 mod config;
 mod server;
 
@@ -30,7 +33,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     loop {
-        // 处理客户端命令与组合键;任一来源切换了状态则广播
+        // 处理客户端命令与组合键;任一来源切换了状态则广播。
+        // 不引入防护:系统状态以硬件(最后一次交互)为准,
+        // 异常退出由 systemd 重启,重启后重新读取硬件状态。
         let mut changed = false;
 
         if let Ok(server::Cmd::Toggle) = cmd_rx.lock().expect("cmd rx lock").try_recv() {
