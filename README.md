@@ -22,34 +22,41 @@
 ## 架构
 
 ```
-mechrevoc/                    Cargo workspace（3 个 crate）
-├── core/                     硬件控制库（零依赖，FFI 调 libc）
+mechrevoc/                      Cargo workspace（3 个 crate）
+├── mechrevoc-core/             硬件控制库（零依赖，FFI 调 libc）
 │   └── src/
-│       ├── lib.rs            模块声明 + 对外重导出（扁平 API）
-│       ├── backend.rs        接口层：TouchpadBackend trait
-│       ├── hardware.rs       硬件实现层：模块声明
+│       ├── lib.rs              模块声明 + 对外重导出（扁平 API）
+│       ├── backend.rs          接口层：TouchpadBackend trait
+│       ├── hardware.rs         硬件实现层：模块声明
 │       ├── hardware/
-│       │   ├── ffi.rs        libc syscall + ioctl 常量
-│       │   ├── discovery.rs  sysfs 设备发现（hidraw / evdev）
-│       │   ├── hidraw.rs     HID feature report 0x06 开关封装
-│       │   ├── evdev.rs      非阻塞事件读取（poll + input_event）
-│       │   └── touchpad.rs   HidrawTouchpad：组合键监听 + 切换（backend 实现）
-│       └── protocol.rs       通信协议层：模块声明
-│           └── client.rs     UNIX socket 客户端协议
-├── daemon/                   mechrevoc-daemon（root，systemd 服务）
+│       │   ├── ffi.rs          libc syscall + ioctl 常量
+│       │   ├── discovery.rs    sysfs 设备发现（hidraw / evdev）
+│       │   ├── hidraw.rs       HID feature report 0x06 开关封装
+│       │   ├── evdev.rs        非阻塞事件读取（poll + input_event）
+│       │   └── touchpad.rs     HidrawTouchpad：组合键监听 + 切换（backend 实现）
+│       ├── protocol.rs         通信协议层：模块声明
+│       │   ├── line.rs         协议行定义（daemon 与客户端共享单一来源）
+│       │   └── client.rs       UNIX socket 客户端协议
+│       └── system.rs           系统信息：只读 sysfs（CPU 温度 / 电池）
+├── mechrevoc-daemon/           守护进程（root，systemd 服务）
 │   └── src/
-│       ├── main.rs           主循环：组合键轮询 + 命令处理 + 唤醒/对账调度
-│       ├── server.rs         UNIX socket 服务（GET/TOGGLE/SUB）
-│       ├── lifecycle.rs      挂起恢复感知与对账节拍（纯时间判定，可单测）
-│       ├── state_store.rs    开关状态持久化（/var/lib/mechrevoc/touchpad_state）
-│       └── config.rs         运行常量与配置
-├── tui/                      mechrevoc-tui（客户端，无硬件权限）
+│       ├── main.rs             主循环：命令处理 + 组合键轮询 + 唤醒/对账调度
+│       ├── server.rs           UNIX socket 服务（GET/TOGGLE/SUB）
+│       ├── lifecycle.rs        挂起恢复感知与对账节拍（纯时间判定，可单测）
+│       ├── state_store.rs      开关状态持久化（/var/lib/mechrevoc/touchpad_state）
+│       └── config.rs           运行常量与配置
+├── mechrevoc-tui/              控制台（客户端，无硬件权限）
 │   └── src/
-│       ├── main.rs           入口：连接 daemon + 事件循环
-│       ├── app.rs            Elm 风格状态（App + handle_key → Action）
-│       ├── ui.rs             侧边栏导航 + 触摸板面板
-│       └── boot.rs           启动引导：检测/安装/启动 daemon
-└── deploy/                   安装脚本 + systemd 服务单元
+│       ├── main.rs             入口：仅装配（连接 → init → event_loop → restore）
+│       ├── terminal.rs         终端生命周期：init/restore + 鼠标捕获
+│       ├── event_loop.rs       主事件循环：事件分发 / 推送接收 / 系统刷新 / 卸载
+│       ├── state.rs            界面状态 State + 输入处理（Elm 风格）
+│       ├── view.rs             渲染框架：布局 / Pane trait / 面板分发
+│       ├── view/               面板目录：touchpad.rs / system.rs
+│       ├── bootstrap.rs        启动引导：安装 / 启动向导流程
+│       ├── service.rs          daemon 服务管理：检测 / 安装 / 启动 / 卸载（polkit）
+│       └── components/         交互组件层：kind.rs / layer.rs
+└── deploy/                     安装脚本 + systemd 服务单元
 ```
 
 ### 分层设计（core 内部自底向上）
@@ -67,7 +74,7 @@ mechrevoc/                    Cargo workspace（3 个 crate）
 └──────────────────────────────┘
 ```
 
-- `HidrawTouchpad`（hidraw + evdev）是真实硬件后端；测试可注入内存 mock 后端（见 `core/src/backend.rs` 测试）
+- `HidrawTouchpad`（hidraw + evdev）是真实硬件后端；测试可注入内存 mock 后端（见 `mechrevoc-core/src/backend.rs` 测试）
 - 未来支持新机型/新协议 = 新增一个 backend 实现，调用方零改动
 
 ### socket 协议（UNIX domain socket: `/run/mechrevoc.sock`）

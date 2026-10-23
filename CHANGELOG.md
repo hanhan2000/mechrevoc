@@ -15,13 +15,15 @@
 
 ### Changed
 - 模块化：daemon 新增 `config` 模块承载运行常量
-- 协议单一来源：新增 `core/protocol/line.rs`，命令字与 STATE 行格式 daemon/客户端双端共享
-- 拆分 `tui/boot.rs`：部署操作（检测/安装/启动/卸载）移至新模块 `deploy.rs`
+- 协议单一来源：新增 `mechrevoc-core/src/protocol/line.rs`，命令字与 STATE 行格式 daemon/客户端双端共享
+- 拆分 `mechrevoc-tui/src/bootstrap.rs`：部署操作（检测/安装/启动/卸载）移至独立模块 `service.rs`
 - unsafe 禁令改由 crate 属性 `#![forbid(unsafe_code)]` 声明，Cargo.toml 完整继承 workspace lints
 - 清理未使用代码：`hidraw::open_readonly`、`hidraw::poll_read`、`evdev::poll_read`
 - 精简冗余重导出：`hardware.rs`/`protocol.rs` 仅保留模块声明，`lib.rs` 为唯一对外门面
 - 设备发现抽出 `key_devices`，作为「应打开的键盘设备」的单一判据
 - `EvdevReader` 携带设备节点路径，用于句柄集合比对与失效诊断
+- crate 目录统一为包名命名：`core`/`daemon`/`tui` → `mechrevoc-core`/`mechrevoc-daemon`/`mechrevoc-tui`，
+  同步更新 workspace members 与 path 依赖
 
 ### Fixed
 - 挂起(s2idle)唤醒后触摸板自动打开：daemon 改为以用户意图（状态文件）为唯一权威，

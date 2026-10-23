@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["core", "daemon", "tui"]
+members = ["mechrevoc-core", "mechrevoc-daemon", "mechrevoc-tui"]
 
 [workspace.package]
 version = "0.1.0"
@@ -10,7 +10,7 @@ rust-version = "1.85"
 authors = ["hanhan2000 <730521870@qq.com>"]
 
 [workspace.dependencies]
-mechrevoc-core = { path = "core" }
+mechrevoc-core = { path = "mechrevoc-core" }
 ratatui = "0.30"
 crossterm = "0.28"
 
