@@ -9,7 +9,7 @@
 //! 本模块是 [`TouchpadBackend`] 的具体实现;调用方只依赖 trait,
 //! 无硬件环境下可用 mock 后端替换(见 `backend::tests`)。
 
-use std::fs;
+use std::collections::BTreeSet;
 
 use crate::backend::TouchpadBackend;
 use crate::hardware::discovery;
@@ -61,6 +61,8 @@ impl ComboDetector {
 pub struct HidrawTouchpad {
     switcher: TouchpadSwitcher,
     readers: Vec<EvdevReader>,
+    /// 系统中存在但打不开的键盘设备(权限/被独占),不参与健康判定
+    skipped: BTreeSet<String>,
     detector: ComboDetector,
     enabled: bool,
 }
@@ -71,10 +73,11 @@ impl TouchpadBackend for HidrawTouchpad {
         let hid = discovery::find_hidraw().ok_or("touchpad hidraw not found")?;
         let switcher = TouchpadSwitcher::open(&hid)?;
         let enabled = state_is_on(switcher.state()?);
-        let readers = open_all_evdev()?;
+        let (readers, skipped) = open_all_evdev()?;
         Ok(HidrawTouchpad {
             switcher,
             readers,
+            skipped,
             detector: ComboDetector::new(),
             enabled,
         })
@@ -108,6 +111,10 @@ impl TouchpadBackend for HidrawTouchpad {
         let mut toggled = false;
         let mut buf = vec![0u8; READ_BUFFER_BYTES];
         for (idx, pfd) in pfds.iter().enumerate() {
+            // 失效句柄不读取,循环结束后统一清理
+            if pfd.revents & ffi::POLL_DEVICE_GONE != 0 {
+                continue;
+            }
             if pfd.revents & POLLIN == 0 {
                 continue;
             }
@@ -119,6 +126,14 @@ impl TouchpadBackend for HidrawTouchpad {
                 }
             }
         }
+        // 丢弃本轮判定为失效的句柄(设备移除或重枚举后旧节点消失)。
+        // 注意:触摸板关闭后其 input 节点消失是预期行为,不视为故障;
+        // 是否需要补建新设备由 is_healthy 与 reattach 决定。
+        self.readers.retain(|reader| {
+            !pfds
+                .iter()
+                .any(|pfd| pfd.fd == reader.fd() && pfd.revents & ffi::POLL_DEVICE_GONE != 0)
+        });
         Ok(toggled)
     }
 
@@ -130,6 +145,61 @@ impl TouchpadBackend for HidrawTouchpad {
         let enabled = !state_is_on(self.switcher.state()?);
         self.switcher
             .set_state(if enabled { STATE_ON } else { STATE_OFF })?;
+        self.enabled = enabled;
+        Ok(())
+    }
+
+    fn refresh_state(&mut self) -> Result<bool, String> {
+        let actual = state_is_on(self.switcher.state()?);
+        let changed = actual != self.enabled;
+        self.enabled = actual;
+        Ok(changed)
+    }
+
+    fn set_enabled(&mut self, enabled: bool) -> Result<(), String> {
+        // 以硬件实际状态判断是否需要写入,避免无谓的 feature report
+        if state_is_on(self.switcher.state()?) == enabled {
+            self.enabled = enabled;
+            return Ok(());
+        }
+        self.switcher
+            .set_state(if enabled { STATE_ON } else { STATE_OFF })?;
+        self.enabled = enabled;
+        Ok(())
+    }
+
+    fn is_healthy(&self) -> bool {
+        // hidraw 失效时 ioctl 直接报错(挂起恢复后节点可能重编号)
+        if self.switcher.state().is_err() {
+            return false;
+        }
+        let Ok(devices) = discovery::key_devices() else {
+            return false;
+        };
+        // 期望集合 = 系统当前的键盘设备,排除已知打不开的
+        let want: BTreeSet<String> = devices
+            .into_iter()
+            .filter(|path| !self.skipped.contains(path))
+            .collect();
+        let have: BTreeSet<String> = self
+            .readers
+            .iter()
+            .map(|reader| reader.path().to_string())
+            .collect();
+        have == want
+    }
+
+    fn reattach(&mut self) -> Result<(), String> {
+        // 挂起恢复后设备可能重编号,必须整组重建而非复用旧节点路径
+        let hid = discovery::find_hidraw().ok_or("touchpad hidraw not found on reattach")?;
+        let switcher = TouchpadSwitcher::open(&hid)?;
+        let enabled = state_is_on(switcher.state()?);
+        let (readers, skipped) = open_all_evdev()?;
+        // 旧句柄由 Drop 关闭;detector 重置以丢弃挂起前残留的半按状态
+        self.switcher = switcher;
+        self.readers = readers;
+        self.skipped = skipped;
+        self.detector = ComboDetector::new();
         self.enabled = enabled;
         Ok(())
     }
@@ -147,37 +217,21 @@ impl HidrawTouchpad {
 
 /// 打开系统上所有「支持按键」的 evdev 设备。
 ///
-/// 组合键由固件注入,来源设备因机型而异,因此监听所有键盘类设备;
-/// 但排除 HDA 音频、PC Speaker 等不可能产生按键的设备,避免浪费。
-fn open_all_evdev() -> Result<Vec<EvdevReader>, String> {
-    let devices = discovery::all_evdev_devices()?;
+/// 返回 (已打开的 reader, 打不开的设备路径)。后者通常是权限不足或被独占,
+/// 记录后不参与健康判定,避免被误判为「漏开的设备」而反复重建。
+fn open_all_evdev() -> Result<(Vec<EvdevReader>, BTreeSet<String>), String> {
     let mut readers = Vec::new();
-    for (path, _name) in &devices {
-        if !supports_keys(path) {
-            continue;
-        }
-        if let Ok(reader) = EvdevReader::open(path) {
-            readers.push(reader);
+    let mut skipped = BTreeSet::new();
+    for path in discovery::key_devices()? {
+        match EvdevReader::open(&path) {
+            Ok(reader) => readers.push(reader),
+            Err(_) => {
+                skipped.insert(path);
+            }
         }
     }
     if readers.is_empty() {
         return Err("no keyboard evdev devices could be opened (need root or input group)".into());
     }
-    Ok(readers)
-}
-
-/// 通过 sysfs 的按键能力位图判断设备是否会产生按键事件
-fn supports_keys(dev_path: &str) -> bool {
-    let Some(node) = dev_path.rsplit('/').next() else {
-        return false;
-    };
-    let key_caps = format!("/sys/class/input/{node}/device/capabilities/key");
-    let Ok(content) = fs::read_to_string(key_caps) else {
-        return false;
-    };
-    // sysfs 位图以空白分隔的十六进制词表示(每词 32 位),
-    // 任一非零即表示该设备支持按键
-    content
-        .split_whitespace()
-        .any(|word| u64::from_str_radix(word, 16).unwrap_or(0) != 0)
+    Ok((readers, skipped))
 }

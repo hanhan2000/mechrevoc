@@ -14,6 +14,7 @@ pub const READ_BUFFER_BYTES: usize = InputEvent::SIZE * EVENTS_PER_READ;
 /// evdev 事件节点读取器
 pub struct EvdevReader {
     fd: RawFd,
+    path: String,
 }
 
 impl EvdevReader {
@@ -24,12 +25,20 @@ impl EvdevReader {
         if fd < 0 {
             return Err(format!("open({dev}): {}", std::io::Error::last_os_error()));
         }
-        Ok(EvdevReader { fd })
+        Ok(EvdevReader {
+            fd,
+            path: dev.to_string(),
+        })
     }
 
     /// 暴露底层文件描述符(供多路复用 poll 使用)
     pub fn fd(&self) -> RawFd {
         self.fd
+    }
+
+    /// 设备节点路径(重连时用于比对"应打开的设备"与"已打开的设备")
+    pub fn path(&self) -> &str {
+        &self.path
     }
 
     /// 非阻塞读取当前可用的原始事件字节(不进行 poll 等待)

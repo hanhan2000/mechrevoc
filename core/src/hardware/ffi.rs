@@ -58,6 +58,15 @@ pub const O_RDWR: c_int = 2;
 pub const O_NONBLOCK: c_int = 0x800;
 
 pub const POLLIN: i16 = 0x0001;
+pub const POLLERR: i16 = 0x0008;
+pub const POLLHUP: i16 = 0x0010;
+pub const POLLNVAL: i16 = 0x0020;
+
+/// 设备节点已失效的 revents 组合:读错误 / 挂断 / fd 非法。
+///
+/// 挂起恢复后设备重枚举、触摸板关闭后其 input 节点消失,都会让
+/// 已持有的 fd 命中这些标志位——上层据此重建或丢弃句柄。
+pub const POLL_DEVICE_GONE: i16 = POLLERR | POLLHUP | POLLNVAL;
 
 // ---------------------------------------------------------------------------
 // evdev 事件类型与编码(linux/input-event-codes.h)

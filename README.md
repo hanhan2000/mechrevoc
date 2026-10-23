@@ -13,6 +13,8 @@
 |------|------|
 | 触摸板开关 | 硬件级开/关 + LED 同步（HID feature report 0x06） |
 | 角落双击自动切换 | 监听固件注入的组合键，还原 Windows 驱动行为 |
+| 状态持久化 | 开关状态落盘，重启后按上次状态恢复（固件不保存状态） |
+| 挂起恢复自愈 | 唤醒后重建设备句柄并与状态对账，固件复位也会被纠正 |
 | TUI 控制台 | 实时状态显示、手动切换、启动引导（无需 sudo） |
 | 系统级守护进程 | systemd 服务，开机自启，唯一接触硬件的进程 |
 | 内置安装 | polkit（`pkexec`）自动部署 daemon + systemd 服务 |
@@ -36,8 +38,10 @@ mechrevoc/                    Cargo workspace（3 个 crate）
 │           └── client.rs     UNIX socket 客户端协议
 ├── daemon/                   mechrevoc-daemon（root，systemd 服务）
 │   └── src/
-│       ├── main.rs           主循环：组合键轮询 + 命令处理 + 状态广播
+│       ├── main.rs           主循环：组合键轮询 + 命令处理 + 唤醒/对账调度
 │       ├── server.rs         UNIX socket 服务（GET/TOGGLE/SUB）
+│       ├── lifecycle.rs      挂起恢复感知与对账节拍（纯时间判定，可单测）
+│       ├── state_store.rs    开关状态持久化（/var/lib/mechrevoc/touchpad_state）
 │       └── config.rs         运行常量与配置
 ├── tui/                      mechrevoc-tui（客户端，无硬件权限）
 │   └── src/
@@ -117,10 +121,22 @@ cargo test --workspace      # 单元 + 集成测试
 cargo doc --open            # 文档
 ```
 
+## 挂起恢复机制
+
+硬件在 s2idle 恢复时会被复位（触摸板固件回到出厂开启状态），而进程内存里还是
+挂起前的快照。daemon 的处理方式：
+
+1. 主循环每 20ms 一轮；若某轮发现距上次已超过 2s，判定进程曾被冻结
+   （零依赖，不订阅 D-Bus 的 `PrepareForSleep`）
+2. 唤醒后整组重建设备句柄（hidraw 与 evdev 节点在恢复后可能重编号）
+3. 以状态文件记录的**用户意图**为准校正硬件 —— 固件复位被自动纠正
+4. 运行期每 2s 对账一次：句柄集合与系统设备表不一致则重建，硬件状态漂移则写回意图
+
 ## 已知边界
 
 - 触摸板关闭后其 input 设备消失，恢复依赖 daemon 常驻监听键盘通道
 - 组合键监听打开所有键盘类设备（sysfs capabilities/key 位图过滤）
+- 唤醒后的设备重建受 2s 对账节拍约束，该窗口内的角落双击可能丢失
 
 ## 许可证
 

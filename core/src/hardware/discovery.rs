@@ -64,6 +64,36 @@ pub fn all_evdev_devices() -> Result<Vec<(String, String)>, String> {
     Ok(devices)
 }
 
+/// 枚举系统上所有「会产生按键事件」的 evdev 节点路径。
+///
+/// 组合键由固件注入,来源设备因机型而异,因此需监听所有键盘类设备;
+/// 但排除 HDA 音频、PC Speaker 等不可能产生按键的设备,避免浪费。
+///
+/// 该集合是设备重连的判据:与已打开的 reader 路径集合一致即视为健康。
+pub fn key_devices() -> Result<Vec<String>, String> {
+    let devices = all_evdev_devices()?;
+    Ok(devices
+        .into_iter()
+        .filter(|(path, _)| supports_keys(path))
+        .map(|(path, _)| path)
+        .collect())
+}
+
+/// 通过 sysfs 的按键能力位图判断设备是否会产生按键事件
+fn supports_keys(dev_path: &str) -> bool {
+    let Some(node) = dev_path.rsplit('/').next() else {
+        return false;
+    };
+    let key_caps = format!("/sys/class/input/{node}/device/capabilities/key");
+    let Ok(content) = fs::read_to_string(key_caps) else {
+        return false;
+    };
+    // sysfs 位图以空白分隔的十六进制词表示(每词 32 位),任一非零即表示设备支持按键
+    content
+        .split_whitespace()
+        .any(|word| u64::from_str_radix(word, 16).unwrap_or(0) != 0)
+}
+
 /// hidraw 的 uevent 是否描述的是本触摸板
 fn is_touchpad_uevent(uevent: &str) -> bool {
     uevent.contains(HIDRAW_UDEV_MARKER[0])
