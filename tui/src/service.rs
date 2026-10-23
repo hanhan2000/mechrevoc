@@ -67,7 +67,9 @@ pub fn run_install() -> bool {
 pub fn run_uninstall() -> bool {
     let cmd = "systemctl disable --now mechrevoc-daemon; \
                rm -f /etc/systemd/system/mechrevoc-daemon.service \
-                     /usr/local/sbin/mechrevoc-daemon; \
+                     /usr/local/sbin/mechrevoc-daemon \
+                     /var/lib/mechrevoc/touchpad_state; \
+               rmdir /var/lib/mechrevoc 2>/dev/null; \
                systemctl daemon-reload";
     Command::new("pkexec")
         .args(["sh", "-c", cmd])

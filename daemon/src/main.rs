@@ -3,12 +3,14 @@
 //! 常驻后台,唯一接触硬件的进程:
 //! - 监听触摸板角落双击(固件注入的 Super+Ctrl+Paste)自动切换开关
 //! - 通过 UNIX socket 为 TUI 客户端提供查询与切换接口
+//! - 持久化触摸板开关状态,重启后恢复(触摸板固件不保存状态)
 
 // 守护进程不允许任何 unsafe 代码(硬件 FFI 全部收敛于 core)
 #![forbid(unsafe_code)]
 
 mod config;
 mod server;
+mod state_store;
 
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -18,6 +20,8 @@ use mechrevoc_core::{default_socket_path, HidrawTouchpad, TouchpadBackend};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 面向 TouchpadBackend trait 编程:换硬件后端 / 注入测试 mock 均无需改动此处
     let mut monitor: Box<dyn TouchpadBackend> = Box::new(HidrawTouchpad::open()?);
+    restore_saved_state(&mut monitor);
+
     let socket_path = default_socket_path();
 
     let state: Arc<Mutex<bool>> = Arc::new(Mutex::new(monitor.enabled()));
@@ -48,10 +52,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             changed = true;
         }
         if changed {
+            // 状态变化即持久化,重启后按此恢复
+            state_store::write_touchpad_state(monitor.enabled());
             broadcast(&subscribers, &state);
         }
 
         std::thread::sleep(config::POLL_INTERVAL);
+    }
+}
+
+/// 启动时恢复上次保存的触摸板状态(如上次关闭则保持关闭)。
+///
+/// 触摸板固件/EC 重启后恢复默认开启,本函数在 daemon 启动时
+/// 将硬件状态校正为上次保存的状态。
+fn restore_saved_state(monitor: &mut Box<dyn TouchpadBackend>) {
+    let Some(saved) = state_store::read_touchpad_state() else {
+        return; // 无保存记录(首次运行):保持硬件默认状态
+    };
+    if monitor.enabled() != saved {
+        match monitor.toggle() {
+            Ok(()) => println!("mechrevoc-daemon: restored touchpad to {}", saved),
+            Err(e) => eprintln!("mechrevoc-daemon: restore touchpad state failed: {e}"),
+        }
     }
 }
 

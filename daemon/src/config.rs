@@ -7,3 +7,6 @@ pub const POLL_INTERVAL: Duration = Duration::from_millis(20);
 
 /// UNIX socket 文件权限(root 创建后放开写权限,允许普通用户客户端连接)
 pub const SOCKET_PERMISSIONS: u32 = 0o666;
+
+/// 触摸板开关状态持久化文件(重启后恢复上次状态)
+pub const STATE_FILE: &str = "/var/lib/mechrevoc/touchpad_state";
